@@ -72,12 +72,7 @@ def running_count(uid: int):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     if is_authorized(uid):
-        await update.message.reply_text(
-            "✅ Welcome authorized user!\n"
-            "/addbot - Host new bot\n"
-            "/stop - Stop bot\n"
-            "/status - Check status"
-        )
+        await update.message.reply_text("✅ Welcome!\n/addbot - Host new bot\n/stop - Stop\n/status - Check")
     else:
         await update.message.reply_text("⚠️ You are not authorised to use, dm owner to gain access! @sammy_here01 ⚠️")
 
@@ -89,7 +84,7 @@ async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     row = running_bot(uid)
     if not row:
-        await update.message.reply_text("ℹ️ No bot running")
+        await update.message.reply_text("No bot running")
         return
 
     pid, _ = row
@@ -112,11 +107,11 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     row = running_bot(uid)
     if row:
         pid, folder = row
-        await update.message.reply_text(f"📊 Running\nPID: {pid}")
+        await update.message.reply_text(f"Running\nPID: {pid}")
     else:
-        await update.message.reply_text("ℹ️ No bot running")
+        await update.message.reply_text("No bot running")
 
-# ================= ADMIN COMMANDS =================
+# ================= ADMIN =================
 async def add_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != OWNER_ID:
         return
@@ -126,11 +121,11 @@ async def add_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         tg_id = int(context.args[0])
         if any(u['id'] == tg_id for u in authorized_users):
-            await update.message.reply_text("Already authorized")
+            await update.message.reply_text("Already added")
             return
         authorized_users.append({'id': tg_id, 'username': ''})
         save_authorized()
-        await update.message.reply_text(f"✅ Added {tg_id}")
+        await update.message.reply_text(f"Added {tg_id}")
     except:
         await update.message.reply_text("Invalid ID")
 
@@ -145,14 +140,14 @@ async def remove_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
         global authorized_users
         authorized_users = [u for u in authorized_users if u['id'] != tg_id]
         save_authorized()
-        await update.message.reply_text(f"❌ Removed {tg_id}")
+        await update.message.reply_text(f"Removed {tg_id}")
     except:
         await update.message.reply_text("Invalid ID")
 
 async def list_users(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != OWNER_ID:
         return
-    msg = "📋 Authorized Users:\n"
+    msg = "Authorized Users:\n"
     for u in authorized_users:
         msg += f"• {u['id']}\n"
     await update.message.reply_text(msg or "No users")
@@ -168,7 +163,7 @@ async def addbot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
     ensure_user(uid)
     if running_count(uid) >= cur.execute("SELECT bot_limit FROM users WHERE user_id=?", (uid,)).fetchone()[0]:
-        await update.message.reply_text("❌ Bot limit reached!")
+        await update.message.reply_text("Bot limit reached!")
         return ConversationHandler.END
 
     await update.message.reply_text("🔑 BOT_TOKEN bhej:")
@@ -176,7 +171,7 @@ async def addbot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 async def receive_token(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data['bot_token'] = update.message.text.strip()
-    await update.message.reply_text("✅ Token mila!\nAb Chat ID bhej (@userinfobot se)")
+    await update.message.reply_text("Token mila!\nAb Chat ID bhej (@userinfobot se)")
     return CHAT_ID
 
 async def receive_chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -188,7 +183,7 @@ async def receive_chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     try:
         user_chat_id = int(update.message.text.strip())
     except ValueError:
-        await update.message.reply_text("❌ Invalid ID! Sirf numbers")
+        await update.message.reply_text("Invalid ID! Sirf numbers")
         return CHAT_ID
 
     token = context.user_data['bot_token']
@@ -201,24 +196,40 @@ async def receive_chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         dst = os.path.join(user_dir, file)
         shutil.copy(src, dst)
 
+    # Alag venv bana
+    venv_dir = os.path.join(user_dir, "venv")
+    subprocess.run(["python3", "-m", "venv", venv_dir], check=True)
+
+    user_python = os.path.join(venv_dir, "bin", "python")
+
+    # Libraries auto install
+    await update.message.reply_text("⏳ Libraries install ho rahi hain... (1-2 min)")
+    install_cmd = [
+        user_python, "-m", "pip", "install",
+        "python-telegram-bot", "instagrapi", "playwright", "playwright-stealth", "python-dotenv", "psutil"
+    ]
+    subprocess.run(install_cmd, check=True)
+
+    # Playwright browser install
+    subprocess.run([user_python, "-m", "playwright", "install", "chromium"], check=True)
+    subprocess.run([user_python, "-m", "playwright", "install-deps", "chromium"], check=True)
+
+    # .env bana
     env_path = os.path.join(user_dir, ".env")
     with open(env_path, "w") as f:
         f.write(f"BOT_TOKEN={token}\n")
         f.write(f"OWNER_TG_ID={user_chat_id}\n")
 
-    # Global venv use kar (playwright error na aaye)
-    global_python = "/home/ubuntu/bot-host/venv/bin/python"  # Tera venv path change kar agar alag hai
-
-    proc = subprocess.Popen([global_python, "spbot5.py"], cwd=user_dir)
+    # Bot start
+    proc = subprocess.Popen([user_python, "spbot5.py"], cwd=user_dir)
 
     cur.execute("INSERT OR REPLACE INTO bots VALUES (?, ?, 'running', ?)", (uid, proc.pid, user_dir))
     conn.commit()
 
-    await update.message.reply_text(f"✅ Bot hosted!\nPID: {proc.pid}\nNaye bot se /start kar")
+    await update.message.reply_text(f"Bot hosted!\nPID: {proc.pid}\n/start kar naye bot se")
 
     return ConversationHandler.END
 
-# ================= MAIN =================
 def main():
     app = ApplicationBuilder().token(BOSS_BOT_TOKEN).build()
 
@@ -239,7 +250,7 @@ def main():
     )
     app.add_handler(conv)
 
-    print("Host Bot Started - Working!")
+    print("Host Bot Started")
     app.run_polling()
 
 if __name__ == "__main__":
